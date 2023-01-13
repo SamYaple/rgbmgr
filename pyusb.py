@@ -3,6 +3,7 @@
 import contextlib
 import sys
 import time
+import random
 
 import usb.core
 import usb.util
@@ -22,8 +23,8 @@ class GenericUSB:
     def close(self):
         usb.util.dispose_resources(self.dev)
 
-    def write(self, data):
-        self.dev.ctrl_transfer(0x21, 0x09, 0x0200, 0x00, data)
+    def write(self, data, reporttype=0x0200):
+        self.dev.ctrl_transfer(0x21, 0x09, reporttype, 0x00, data)
 
 
 @contextlib.contextmanager
@@ -40,28 +41,44 @@ def open_usb(vendor_id=0x1038, product_id=0x1134):
         gu.close()
     
 
-def generate_brightness_data(brightness=0xff):
-    # NOTE: First byte "0x0c" appears to be control byte for brightness only
-    #       Second byte is unknown, but set to 0. Might be an Endianness issue
-    # Brightness range 0-255 -- 0x00-0xFF
-    return [0x0c, 0x00, brightness]
+def generate_random_led():
+    r = int.from_bytes(random.randbytes(1), "big")
+    g = int.from_bytes(random.randbytes(1), "big")
+    b = int.from_bytes(random.randbytes(1), "big")
+    enabled = bool(random.getrandbits(1))
+    return generate_led(r, g, b, enabled)
 
+
+def generate_led(r=0x0, g=0x0, b=0x0, enabled=True):
+    led_on = 0x00
+    if enabled:
+        led_on = 0x01
+    return [r, g, b, 0x00, 0x00, 0x00, 0x00, 0x00, led_on, 0x01, 0x00]
 
 
 def main():
     with open_usb(vendor_id=0x1038, product_id=0x1134) as gu:
-        data = generate_brightness_data(0)
-        print("Setting lightbar Min Brightness")
-        gu.write(data)
-        print(f"Successfully wrote data to usb: {data}")
+        test_data = [0x0e, 0x00, 0x1e, 0x00]
+        for i in range(31):
+            test_data += generate_random_led()
+            #test_data += generate_led(g=255)
+            # Set the LED index: 0x00-0x1f are valid bytes (0-31 in base 10)
+            test_data.append(i)
 
-        time.sleep(2)
+        print("Setting LEDS: byte size {}", len(test_data))
+        gu.write(data=test_data, reporttype=0x0300)
+        time.sleep(0.1)
 
-        data = generate_brightness_data(255)
-        print("Setting lightbar Max Brightness")
-        gu.write(data)
-        print(f"Successfully wrote data to usb: {data}")
+        # Commit color settings
+        #gu.write([0x0d, 0x00, 0x02] + ([0x00] * 61))
+        gu.write([0x0d, 0x00, 0x02])
 
+        # NOTE: First byte "0x0c" appears to be control byte for brightness only
+        #       Second byte is unknown, but set to 0. Might be an Endianness issue
+        # Brightness range 0-255 -- 0x00-0xFF
+        brightness = int.from_bytes(random.randbytes(1), "big")
+        print(f"Setting lightbar random brightness on scale 0-255: {brightness}")
+        gu.write([0x0c, 0x00, brightness])
 
 if __name__ == '__main__':
     main()
