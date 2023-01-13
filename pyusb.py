@@ -26,6 +26,13 @@ class GenericUSB:
     def write(self, data, reporttype=0x0200):
         self.dev.ctrl_transfer(0x21, 0x09, reporttype, 0x00, data)
 
+        # NOTE: The sleep might be able to be lower, its fine for my purposes
+        #       Without the sleep, the bar will not properly recieve all
+        #       information. A race condition in the dev firmware maybe?
+        # sleep before calling refresh/commit/this thing [0x0d, 0x00, 0x02]
+        time.sleep(0.1)
+        self.dev.ctrl_transfer(0x21, 0x09, 0x0200, 0x00, [0x0d, 0x00, 0x02])
+
 
 @contextlib.contextmanager
 def open_usb(vendor_id=0x1038, product_id=0x1134):
@@ -58,27 +65,24 @@ def generate_led(r=0x0, g=0x0, b=0x0, enabled=True):
 
 def main():
     with open_usb(vendor_id=0x1038, product_id=0x1134) as gu:
-        test_data = [0x0e, 0x00, 0x1e, 0x00]
-        for i in range(31):
-            test_data += generate_random_led()
-            #test_data += generate_led(g=255)
-            # Set the LED index: 0x00-0x1f are valid bytes (0-31 in base 10)
-            test_data.append(i)
-
-        print("Setting LEDS: byte size {}", len(test_data))
-        gu.write(data=test_data, reporttype=0x0300)
-        time.sleep(0.1)
-
-        # Commit color settings
-        #gu.write([0x0d, 0x00, 0x02] + ([0x00] * 61))
-        gu.write([0x0d, 0x00, 0x02])
-
         # NOTE: First byte "0x0c" appears to be control byte for brightness only
         #       Second byte is unknown, but set to 0. Might be an Endianness issue
         # Brightness range 0-255 -- 0x00-0xFF
         brightness = int.from_bytes(random.randbytes(1), "big")
         print(f"Setting lightbar random brightness on scale 0-255: {brightness}")
         gu.write([0x0c, 0x00, brightness])
+
+
+        color_data = [0x0e, 0x00, 0x1e, 0x00]
+        for i in range(31):
+            color_data += generate_random_led()
+            #color_data += generate_led(g=255)
+            # Set the LED index: 0x00-0x1f are valid bytes (0-31 in base 10)
+            color_data.append(i)
+
+        print("Setting LEDS: byte size {}", len(color_data))
+        gu.write(data=color_data, reporttype=0x0300)
+
 
 if __name__ == '__main__':
     main()
