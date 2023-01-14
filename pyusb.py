@@ -9,6 +9,8 @@ import psutil
 import usb.core
 import usb.util
 
+# How often to update the lightbar in second(s)
+UPDATE_INTERVAL = 0.5
 
 class GenericUSB:
     def __init__(self, vendor_id, product_id):
@@ -20,6 +22,7 @@ class GenericUSB:
     def detach_kernel_driver(self, interface):
         if self.dev.is_kernel_driver_active(interface):
             self.dev.detach_kernel_driver(interface)
+        self.dev.reset()
 
     def close(self):
         usb.util.dispose_resources(self.dev)
@@ -121,7 +124,7 @@ def open_usb(vendor_id, product_id):
         gu.close()
     
 
-def generate_random_led():
+def generate_random_led(index=0x00):
     #r = int.from_bytes(random.randbytes(1), "big")
     #g = int.from_bytes(random.randbytes(1), "big")
     #b = int.from_bytes(random.randbytes(1), "big")
@@ -135,14 +138,14 @@ def generate_random_led():
     # Enable this LED?
     enabled = bool(random.getrandbits(1))
 
-    return generate_led(r, g, b, enabled)
+    return generate_led(r, g, b, index, enabled)
 
 
-def generate_led(r=0x0, g=0x0, b=0x0, enabled=True):
+def generate_led(r=0x0, g=0x0, b=0x0, index=0x00, enabled=True):
     led_on = 0x00
     if enabled:
         led_on = 0x01
-    return [r, g, b, 0x00, 0x00, 0x00, 0x00, 0x00, led_on, 0x01, 0x00]
+    return [r, g, b, 0x00, 0x00, 0x00, 0x00, 0x00, led_on, 0x01, 0x00, index]
 
 
 def main():
@@ -150,29 +153,21 @@ def main():
         #brightness = int.from_bytes(random.randbytes(1), "big")
         #print(f"Setting lightbar random brightness on scale 0-255: {brightness}")
 
-        print("Setting lightbar max brightness")
+        print("Setting lightbar to max brightness")
         gu.write([0x0c, 0x00, 0xff])
 
+        print(f"Looping every {UPDATE_INTERVAL} second(s)... forever")
+        while True:
+            time.sleep(UPDATE_INTERVAL)
+            values = psutil.cpu_percent(percpu=True)
+            color_data = [0x0e, 0x00, 0x1e, 0x00]
+            for i in range(32):
+                thread_usage = values[int(i/2)]
+                (r, g, b) = green_to_red_percentage(thread_usage)
+                color_data += generate_led(r, g, b, i)
 
-        color_data = [0x0e, 0x00, 0x1e, 0x00]
-
-        p = 0
-        # Set the LED index: 0x00-0x1f are valid bytes (0-31 in base 10)
-        for i in range(15):
-            (r, g, b) = green_to_red_percentage(p)
-            p += 3
-
-            color_data += generate_led(r, g, b)
-            color_data.append(i)
-
-        values = psutil.cpu_percent(percpu=True)
-        for i in range(15):
-            (r, g, b) = green_to_red_percentage(values[i])
-            color_data += generate_led(r, g, b)
-            color_data.append(16 + i)
-
-        print("Setting LEDS: byte size {}", len(color_data))
-        gu.write(data=color_data, reporttype=0x0300)
+            #print("Setting LEDS: byte size {}", len(color_data))
+            gu.write(data=color_data, reporttype=0x0300)
 
 
 if __name__ == '__main__':
