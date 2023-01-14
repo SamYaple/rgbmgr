@@ -4,6 +4,7 @@ import contextlib
 import sys
 import time
 import random
+import psutil
 
 import usb.core
 import usb.util
@@ -157,12 +158,18 @@ def main():
 
         p = 0
         # Set the LED index: 0x00-0x1f are valid bytes (0-31 in base 10)
-        for i in range(31):
+        for i in range(15):
             (r, g, b) = green_to_red_percentage(p)
             p += 3
 
             color_data += generate_led(r, g, b)
             color_data.append(i)
+
+        values = psutil.cpu_percent(percpu=True)
+        for i in range(15):
+            (r, g, b) = green_to_red_percentage(values[i])
+            color_data += generate_led(r, g, b)
+            color_data.append(16 + i)
 
         print("Setting LEDS: byte size {}", len(color_data))
         gu.write(data=color_data, reporttype=0x0300)
